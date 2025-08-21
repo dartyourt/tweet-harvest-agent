@@ -1,6 +1,4 @@
-"""
-Twitter Scraper Agent - GUI Application
-"""
+
 import os
 import sys
 import tkinter as tk
@@ -15,43 +13,33 @@ import webbrowser
 from pathlib import Path
 import re
 
-# Add parent directory to path to ensure imports work
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import project modules
 from config import config, logger, update_auth_token
 from twitter_scraper import TwitterScraper
 
 class ScrollableFrame(ttk.Frame):
-    """A scrollable frame widget"""
     def __init__(self, container, *args, **kwargs):
         super().__init__(container, *args, **kwargs)
         
-        # Create a canvas and scrollbar
         self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        
-        # Configure the canvas
         self.scrollable_frame = ttk.Frame(self.canvas)
         self.scrollable_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
         
-        # Create a window inside the canvas
         self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=scrollbar.set)
         
-        # Pack the canvas and scrollbar
         self.canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Bind mousewheel scrolling - only to this widget to avoid errors
         self.bind("<Enter>", self._bind_mousewheel)
         self.bind("<Leave>", self._unbind_mousewheel)
     
     def _bind_mousewheel(self, event):
-        """Bind mousewheel when mouse enters the frame"""
         if sys.platform.startswith('win'):
             self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
         elif sys.platform.startswith('darwin'):
@@ -63,7 +51,6 @@ class ScrollableFrame(ttk.Frame):
             self.canvas.bind_all("<Button-5>", self._on_mousewheel)
     
     def _unbind_mousewheel(self, event):
-        """Unbind mousewheel when mouse leaves the frame"""
         if sys.platform.startswith('win'):
             self.canvas.unbind_all("<MouseWheel>")
         elif sys.platform.startswith('darwin'):
@@ -75,8 +62,6 @@ class ScrollableFrame(ttk.Frame):
             self.canvas.unbind_all("<Button-5>")
     
     def _on_mousewheel(self, event):
-        """Handle mousewheel scrolling"""
-        # Cross-platform scrolling
         if sys.platform.startswith('win'):
             self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         elif sys.platform.startswith('darwin'):
@@ -88,127 +73,82 @@ class ScrollableFrame(ttk.Frame):
                 self.canvas.yview_scroll(1, "units")
 
 class TwitterScraperApp:
-    """Main application class for Twitter Scraper Agent"""
     
     def __init__(self, root):
-        """Initialize the application"""
         self.root = root
-        self.root.title("Twitter Scraper Agent - Advanced Twitter Scraping Tool")
-        self.root.geometry("1024x768")  # Fixed standard resolution
-        self.root.minsize(1024, 768)    # Fixed minimum size to match
-        self.root.resizable(True, True) # Allow resizing but with minimum size
+        self.root.title("Tweet Harvest Agent - Advanced Twitter Scraping Tool")
+        self.root.geometry("1024x768") 
+        self.root.minsize(1024, 768)
+        self.root.resizable(True, True)
         
-        # Set icon if available
-        try:
-            self.root.iconbitmap("icon.ico")
-        except:
-            pass
-        
-        # Initialize scraper
         self.scraper = TwitterScraper()
-        
-        # Setup variables
         self.setup_variables()
-        
-        # Create UI
         self.create_ui()
-        
-        # Check for Node.js
         self.check_node_install()
-        
-        # Check for auth token
         self.check_auth_token()
     
     def setup_variables(self):
-        """Setup tkinter variables"""
-        # Auth token
         self.auth_token_var = tk.StringVar(value=config['auth_token'])
         
-        # Date range - full date control with calendar awareness
         current_year = datetime.now().year
         current_month = datetime.now().month
         current_day = datetime.now().day
         
-        # Default to previous year as start date
         self.start_year_var = tk.StringVar(value=str(current_year-1))
         self.start_month_var = tk.StringVar(value="01")
         self.start_day_var = tk.StringVar(value="01")
         
-        # Default to current date as end date
         self.end_year_var = tk.StringVar(value=str(current_year))
         self.end_month_var = tk.StringVar(value=f"{current_month:02d}")
         self.end_day_var = tk.StringVar(value=f"{current_day:02d}")
         
-        # Store the actual selected dates as datetime objects
         self.start_date = datetime(current_year-1, 1, 1)
         self.end_date = datetime(current_year, current_month, current_day)
         
-        # Date interval
         self.interval_var = tk.StringVar(value="monthly")
         
-        # Keywords
         self.keywords_text = scrolledtext.ScrolledText(self.root, height=5)
-        self.use_quotes_vars = []  # Will be populated dynamically
+        self.use_quotes_vars = []
         
-        # Settings
         self.limit_var = tk.StringVar(value=str(config['default_limit']))
         self.lang_var = tk.StringVar(value=config['default_lang'])
         self.tab_var = tk.StringVar(value=config['default_tab'])
         
-        # Status
         self.status_var = tk.StringVar(value="Ready")
         self.progress_var = tk.DoubleVar(value=0.0)
         
-        # Output directory
         self.output_dir_var = tk.StringVar(value=config['output_dir'])
         
-        # Batch job tracking
         self.current_batch = None
         self.stop_requested = False
     
     def create_ui(self):
-        """Create the user interface"""
-        # Create style
         self.style = ttk.Style()
         
-        # Apply custom styles with increased sizes for better visibility
         self.style.configure('TNotebook.Tab', padding=[20, 10], font=('Segoe UI', 11))
         self.style.configure('Custom.TButton', font=('Segoe UI', 11, 'bold'), padding=[10, 5])
         self.style.configure('TLabelframe.Label', font=('Segoe UI', 11, 'bold'))
         self.style.configure('TLabel', font=('Segoe UI', 10))
         self.style.configure('TButton', font=('Segoe UI', 10), padding=[8, 4])
-        
-        # Add special style for keyword header with clear background
         self.style.configure('KeywordHeader.TFrame', background='#E8F0F8')
-        
-        # Enhanced visual styles for important elements
         self.style.configure('Emphasis.TLabelframe', borderwidth=2, relief='groove')
         self.style.configure('Emphasis.TLabelframe.Label', 
                             font=('Segoe UI', 12, 'bold'), 
                             foreground='#004080')
-        
-        # Configure scrollbar style for better visibility
         self.style.configure('TScrollbar', gripcount=0, background='#D0D0D0', 
                           troughcolor='#F0F0F0', borderwidth=1, arrowsize=13)
-                          
-        # Calendar selected date button style
         self.style.configure('Selected.TButton', background='#0078D7', foreground='white')
-                          
-        # Make buttons more visible and clickable
         self.style.map('Custom.TButton',
                      foreground=[('active', '#000000'), ('!disabled', '#000000')],
                      background=[('active', '#e1e1e1'), ('!disabled', '#f0f0f0')],
                      relief=[('pressed', 'sunken'), ('!pressed', 'raised')])
         
-        # Container frame for better organization
         container = ttk.Frame(self.root)
         container.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # Create main notebook with more visible tabs
         self.notebook = ttk.Notebook(container)
         self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # Create tabs
         self.main_tab = ttk.Frame(self.notebook)
         self.results_tab = ttk.Frame(self.notebook)
         self.settings_tab = ttk.Frame(self.notebook)
@@ -218,13 +158,9 @@ class TwitterScraperApp:
         self.notebook.add(self.results_tab, text='  Results  ')
         self.notebook.add(self.settings_tab, text='  Settings  ')
         self.notebook.add(self.help_tab, text='  Help  ')
-        
-        # Handle tab switching to manage scroll bindings
         def on_tab_changed(event):
             tab_id = self.notebook.select()
             tab_name = self.notebook.tab(tab_id, "text").strip()
-            
-            # Unbind all mousewheel events first
             if sys.platform.startswith('win'):
                 self.root.unbind_all("<MouseWheel>")
             elif sys.platform.startswith('darwin'):
@@ -235,20 +171,16 @@ class TwitterScraperApp:
                 self.root.unbind_all("<Button-4>")
                 self.root.unbind_all("<Button-5>")
                 
-            # Rebind for main tab if that's where we are
             if tab_name == "Scraper" and hasattr(self, 'scrollable_main_frame'):
-                # The bindings will be recreated in setup_main_tab
                 pass
         
         self.notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
         
-        # Set up each tab
         self.setup_main_tab()
         self.setup_results_tab()
         self.setup_settings_tab()
         self.setup_help_tab()
-        
-        # Status bar at the bottom
+
         status_frame = ttk.Frame(self.root)
         status_frame.pack(fill='x', padx=10, pady=(0, 10))
         
@@ -264,12 +196,9 @@ class TwitterScraperApp:
         status_label.pack(side='right')
     
     def setup_main_tab(self):
-        """Set up the main scraper tab with fixed layout"""
-        # Simple fixed-size frame instead of complex scrolling
         main_frame = ttk.Frame(self.main_tab)
         main_frame.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        # Big heading at the top to make it clear
+
         header_frame = ttk.Frame(main_frame)
         header_frame.pack(fill='x', pady=(0, 15))
         
@@ -278,20 +207,15 @@ class TwitterScraperApp:
             text="Twitter Tweet Scraper", 
             font=('Segoe UI', 16, 'bold')
         ).pack(side='left')
-        
-        # Add a button for help
         ttk.Button(
             header_frame,
             text="Need Help?",
             command=lambda: self.notebook.select(self.help_tab),
             style='Custom.TButton'
         ).pack(side='right')
-        
-        # Keywords Frame - PUT FIRST with clearer instructions
+
         keywords_frame = ttk.LabelFrame(main_frame, text="")
         keywords_frame.pack(fill='x', pady=(0, 15), ipady=10)
-        
-        # Add a more prominent heading for keywords section
         keyword_header = ttk.Frame(keywords_frame, style='KeywordHeader.TFrame')
         keyword_header.pack(fill='x', padx=5, pady=5)
         
@@ -308,7 +232,6 @@ class TwitterScraperApp:
             font=('Segoe UI', 10)
         ).pack(anchor='w', padx=10, pady=(5, 0))
         
-        # Make keyword text area more visible with a border
         keyword_entry_frame = ttk.Frame(keywords_frame, padding=5)
         keyword_entry_frame.pack(fill='x', padx=10, pady=5)
         
@@ -321,13 +244,11 @@ class TwitterScraperApp:
         )
         self.keywords_text.pack(fill='x', expand=True)
         
-        # Default keywords examples with a placeholder text
         if not hasattr(self, 'keywords_initialized'):
             placeholder = "#pilpres2024\ngibran\n\"Universitas Indonesia\""
             self.keywords_text.insert('1.0', placeholder)
             self.keywords_initialized = True
         
-        # Keyword settings info frame with better visibility
         keyword_info_frame = ttk.Frame(keywords_frame)
         keyword_info_frame.pack(fill='x', padx=10, pady=(0, 5))
         
@@ -337,7 +258,6 @@ class TwitterScraperApp:
             font=('Segoe UI', 9, 'italic')
         ).pack(side='left')
         
-        # Make the Add Examples button more prominent
         ttk.Button(
             keyword_info_frame, 
             text="Add Example Keywords ▼", 
@@ -345,26 +265,21 @@ class TwitterScraperApp:
             style='Custom.TButton'
         ).pack(side='right')
         
-        # Date Range Frame - SECOND with detailed controls
         date_frame = ttk.LabelFrame(main_frame, text="Time Range", style='Emphasis.TLabelframe')
         date_frame.pack(fill='x', pady=(0, 15), ipady=5)
         
-        # Create frame for start date
         start_date_frame = ttk.LabelFrame(date_frame, text="Start Date")
         start_date_frame.pack(side='left', fill='x', expand=True, padx=10, pady=5)
-        
-        # Start Date: Year, Month, Day with calendar picker
+
         start_date_inner = ttk.Frame(start_date_frame)
         start_date_inner.pack(padx=5, pady=5, fill='x')
         
-        # Year combobox with updated range
         ttk.Label(start_date_inner, text="Year:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
         start_year_entry = ttk.Combobox(start_date_inner, textvariable=self.start_year_var, 
                                         values=[str(y) for y in range(2010, datetime.now().year+2)],  # Include next year
                                         width=6)
         start_year_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
         
-        # Month combobox with month names
         ttk.Label(start_date_inner, text="Month:").grid(row=0, column=2, padx=5, pady=5, sticky='w')
         start_month_combobox = ttk.Combobox(start_date_inner, textvariable=self.start_month_var, 
                                           values=['01', '02', '03', '04', '05', '06', 
@@ -372,13 +287,11 @@ class TwitterScraperApp:
                                           width=4)
         start_month_combobox.grid(row=0, column=3, padx=5, pady=5, sticky='w')
         
-        # Day combobox with appropriate days for selected month
         ttk.Label(start_date_inner, text="Day:").grid(row=0, column=4, padx=5, pady=5, sticky='w')
         start_day_combobox = ttk.Combobox(start_date_inner, textvariable=self.start_day_var,
                                        width=4)
         start_day_combobox.grid(row=0, column=5, padx=5, pady=5, sticky='w')
-        
-        # Calendar picker button for start date
+    
         ttk.Button(start_date_inner, text="📅", width=3,
                  command=lambda: self.show_calendar(
                      self.start_year_var, 
@@ -386,7 +299,6 @@ class TwitterScraperApp:
                      self.start_day_var
                  )).grid(row=0, column=6, padx=5, pady=5, sticky='w')
         
-        # Update available days when month/year changes
         def update_start_days(*args):
             self.update_day_options(
                 self.start_year_var, 
@@ -398,7 +310,6 @@ class TwitterScraperApp:
         self.start_year_var.trace('w', update_start_days)
         self.start_month_var.trace('w', update_start_days)
         
-        # Initialize days for start date
         self.update_day_options(
             self.start_year_var, 
             self.start_month_var, 
@@ -406,44 +317,37 @@ class TwitterScraperApp:
             start_day_combobox
         )
         
-        # Create frame for end date
         end_date_frame = ttk.LabelFrame(date_frame, text="End Date")
         end_date_frame.pack(side='right', fill='x', expand=True, padx=10, pady=5)
-        
-        # End Date: Year, Month, Day with calendar picker
+ 
         end_date_inner = ttk.Frame(end_date_frame)
         end_date_inner.pack(padx=5, pady=5, fill='x')
-        
-        # Year combobox with updated range
+
         ttk.Label(end_date_inner, text="Year:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
         end_year_entry = ttk.Combobox(end_date_inner, textvariable=self.end_year_var,
                                      values=[str(y) for y in range(2010, datetime.now().year+2)],  # Include next year
                                      width=6)
         end_year_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
         
-        # Month combobox with month names
+
         ttk.Label(end_date_inner, text="Month:").grid(row=0, column=2, padx=5, pady=5, sticky='w')
         end_month_combobox = ttk.Combobox(end_date_inner, textvariable=self.end_month_var, 
                                         values=['01', '02', '03', '04', '05', '06', 
                                                 '07', '08', '09', '10', '11', '12'],
                                         width=4)
         end_month_combobox.grid(row=0, column=3, padx=5, pady=5, sticky='w')
-        
-        # Day combobox with appropriate days for selected month
+
         ttk.Label(end_date_inner, text="Day:").grid(row=0, column=4, padx=5, pady=5, sticky='w')
         end_day_combobox = ttk.Combobox(end_date_inner, textvariable=self.end_day_var,
                                      width=4)
         end_day_combobox.grid(row=0, column=5, padx=5, pady=5, sticky='w')
         
-        # Calendar picker button for end date
         ttk.Button(end_date_inner, text="📅", width=3,
                  command=lambda: self.show_calendar(
                      self.end_year_var, 
                      self.end_month_var, 
                      self.end_day_var
                  )).grid(row=0, column=6, padx=5, pady=5, sticky='w')
-        
-        # Update available days when month/year changes
         def update_end_days(*args):
             self.update_day_options(
                 self.end_year_var, 
@@ -455,7 +359,7 @@ class TwitterScraperApp:
         self.end_year_var.trace('w', update_end_days)
         self.end_month_var.trace('w', update_end_days)
         
-        # Initialize days for end date
+
         self.update_day_options(
             self.end_year_var, 
             self.end_month_var, 
@@ -463,7 +367,6 @@ class TwitterScraperApp:
             end_day_combobox
         )
         
-        # Interval selection - below date pickers
         interval_frame = ttk.Frame(date_frame)
         interval_frame.pack(fill='x', padx=10, pady=5)
         
@@ -475,16 +378,13 @@ class TwitterScraperApp:
         
         ttk.Button(interval_frame, text="Preview Date Ranges", command=self.preview_date_ranges).pack(
             side='right', padx=10)
-        
-        # Scraping Options Frame
+
         options_frame = ttk.LabelFrame(main_frame, text="Scraping Options", style='Emphasis.TLabelframe')
         options_frame.pack(fill='x', pady=(0, 15), ipady=5)
-        
-        # Grid layout for options
+ 
         options_grid = ttk.Frame(options_frame)
         options_grid.pack(fill='x', padx=10, pady=5)
-        
-        # Row 1
+   
         ttk.Label(options_grid, text="Tweets per request:").grid(row=0, column=0, padx=10, pady=5, sticky='w')
         limit_entry = ttk.Entry(options_grid, textvariable=self.limit_var, width=10)
         limit_entry.grid(row=0, column=1, padx=10, pady=5, sticky='w')
@@ -494,7 +394,6 @@ class TwitterScraperApp:
                                     values=["id", "en", "es", "fr", "ar", "ja", "ko", "de"], width=10)
         lang_combobox.grid(row=0, column=3, padx=10, pady=5, sticky='w')
         
-        # Row 2
         ttk.Label(options_grid, text="Tab:").grid(row=1, column=0, padx=10, pady=5, sticky='w')
         tab_combobox = ttk.Combobox(options_grid, textvariable=self.tab_var, 
                                    values=["LATEST", "TOP"], width=10)
@@ -503,8 +402,7 @@ class TwitterScraperApp:
         ttk.Label(options_grid, text="Output Directory:").grid(row=1, column=2, padx=10, pady=5, sticky='w')
         output_frame = ttk.Frame(options_grid)
         output_frame.grid(row=1, column=3, padx=10, pady=5, sticky='w')
-        
-        # Display just 'scraped_tweets' instead of full path for clarity
+
         display_path = self.output_dir_var.get()
         if "/tweets-data" in display_path:
             display_path = display_path.replace("/tweets-data", "")
@@ -514,19 +412,15 @@ class TwitterScraperApp:
         output_entry.pack(side='left')
         
         ttk.Button(output_frame, text="...", width=3, command=self.browse_output_dir).pack(side='left')
-        
-        # Action buttons with fixed sizes and better alignment
+
         action_frame = ttk.Frame(main_frame)
         action_frame.pack(fill='x', pady=15)
-        
-        # Create a separator above the buttons for visual clarity
+
         ttk.Separator(main_frame).pack(fill='x', pady=5)
-        
-        # Buttons frame using pack layout - more reliable than grid
+
         button_frame = ttk.Frame(action_frame)
         button_frame.pack(fill='x', expand=True)
         
-        # Make start button more prominent
         ttk.Button(button_frame, text="✅ Start Scraping", command=self.start_scraping, 
                   style='Custom.TButton', width=20).pack(side='left', padx=10)
         
@@ -534,7 +428,6 @@ class TwitterScraperApp:
                                      state='disabled', style='Custom.TButton', width=10)
         self.stop_button.pack(side='left', padx=10)
         
-        # Create style for clear button - make it stand out
         self.style.configure('Clear.TButton', 
                            font=('Segoe UI', 11, 'bold'),
                            padding=[10, 5],
@@ -544,32 +437,25 @@ class TwitterScraperApp:
                      foreground=[('active', '#000000'), ('!disabled', '#000000')],
                      background=[('active', '#ffe0e0'), ('!disabled', '#ffeeee')])
                      
-        # Clear button with distinct style
         clear_button = ttk.Button(button_frame, text="🗑️ Clear Form", command=self.clear_form, 
                                style='Clear.TButton', width=15)
         clear_button.pack(side='right', padx=20)
         
-        # Create a separator below the buttons for visual clarity
         ttk.Separator(main_frame).pack(fill='x', pady=5)
         
-        # Log output - fixed size and clearly visible
         log_frame = ttk.LabelFrame(main_frame, text="Log", style='Emphasis.TLabelframe')
         log_frame.pack(fill='x', pady=(0, 10), ipady=5)
         
-        # Set a fixed height for the log area
         self.log_text = scrolledtext.ScrolledText(log_frame, height=8, wrap=tk.WORD)
         self.log_text.pack(fill='both', padx=10, pady=5)
         self.log_text.config(state='disabled')
-        
-        # Add some padding at the bottom for clarity
+
         ttk.Frame(main_frame, height=20).pack(fill='x')
     
     def setup_results_tab(self):
-        """Set up the results tab"""
         results_frame = ttk.Frame(self.results_tab)
         results_frame.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        # Results header
+ 
         header_frame = ttk.Frame(results_frame)
         header_frame.pack(fill='x', pady=(0, 10))
         
@@ -577,46 +463,38 @@ class TwitterScraperApp:
         
         self.refresh_button = ttk.Button(header_frame, text="Refresh", command=self.refresh_results)
         self.refresh_button.pack(side='right')
-        
-        # Create a paned window
+
         paned_window = ttk.PanedWindow(results_frame, orient=tk.VERTICAL)
         paned_window.pack(fill='both', expand=True)
-        
-        # Top pane - Summary
+
         summary_frame = ttk.LabelFrame(paned_window, text="Summary")
         paned_window.add(summary_frame, weight=1)
         
         self.summary_text = scrolledtext.ScrolledText(summary_frame, height=5, wrap=tk.WORD)
         self.summary_text.pack(fill='both', expand=True, padx=10, pady=10)
         self.summary_text.config(state='disabled')
-        
-        # Bottom pane - File list
+    
         files_frame = ttk.LabelFrame(paned_window, text="Files")
         paned_window.add(files_frame, weight=2)
-        
-        # Create treeview for files
+  
         columns = ('filename', 'date_range', 'keyword', 'size', 'tweets')
         self.files_tree = ttk.Treeview(files_frame, columns=columns, show='headings')
         
-        # Define headings
         self.files_tree.heading('filename', text='Filename')
         self.files_tree.heading('date_range', text='Date Range')
         self.files_tree.heading('keyword', text='Keyword')
         self.files_tree.heading('size', text='Size')
         self.files_tree.heading('tweets', text='Tweets')
         
-        # Define columns
         self.files_tree.column('filename', width=200)
         self.files_tree.column('date_range', width=150)
         self.files_tree.column('keyword', width=150)
         self.files_tree.column('size', width=80)
         self.files_tree.column('tweets', width=80)
         
-        # Create scrollbar
         scrollbar = ttk.Scrollbar(files_frame, orient=tk.VERTICAL, command=self.files_tree.yview)
         self.files_tree.configure(yscroll=scrollbar.set)
         
-        # Add right-click menu
         self.files_tree_menu = tk.Menu(self.files_tree, tearoff=0)
         self.files_tree_menu.add_command(label="Open File", command=self.open_selected_file)
         self.files_tree_menu.add_command(label="Open Folder", command=self.open_containing_folder)
@@ -624,11 +502,9 @@ class TwitterScraperApp:
         self.files_tree.bind("<Button-3>", self.show_files_tree_menu)
         self.files_tree.bind("<Double-1>", lambda e: self.open_selected_file())
         
-        # Pack everything
         scrollbar.pack(side='right', fill='y')
         self.files_tree.pack(side='left', fill='both', expand=True)
         
-        # Action buttons
         action_frame = ttk.Frame(results_frame)
         action_frame.pack(fill='x', pady=10)
         
@@ -639,11 +515,9 @@ class TwitterScraperApp:
                   command=self.export_results_summary).pack(side='left', padx=5)
     
     def setup_settings_tab(self):
-        """Set up the settings tab"""
         settings_frame = ttk.Frame(self.settings_tab)
         settings_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        # Auth token section
         auth_frame = ttk.LabelFrame(settings_frame, text="Authentication")
         auth_frame.pack(fill='x', pady=(0, 15), ipady=5)
         
@@ -676,18 +550,15 @@ class TwitterScraperApp:
         )
         token_instructions.grid(row=1, column=1, columnspan=2, padx=10, pady=(0, 10), sticky='w')
         
-        # Output directory section
         output_frame = ttk.LabelFrame(settings_frame, text="Output Settings")
         output_frame.pack(fill='x', pady=(0, 15), ipady=5)
         
-        # Add explanation label
         ttk.Label(output_frame, text="Files will be saved directly in this folder:").grid(
             row=0, column=0, columnspan=3, padx=10, pady=(10, 0), sticky='w')
         
         ttk.Label(output_frame, text="Default Output Directory:").grid(
             row=1, column=0, padx=10, pady=10, sticky='w')
         
-        # Check for "/tweets-data" in path and remove it
         display_path = self.output_dir_var.get()
         if "/tweets-data" in display_path:
             display_path = display_path.replace("/tweets-data", "")
@@ -703,7 +574,6 @@ class TwitterScraperApp:
         ttk.Button(output_frame, text="Save", command=self.save_output_dir).grid(
             row=1, column=2, padx=10, pady=10, sticky='w')
         
-        # Node.js check section
         node_frame = ttk.LabelFrame(settings_frame, text="System Requirements")
         node_frame.pack(fill='x', pady=(0, 15), ipady=5)
         
@@ -715,15 +585,12 @@ class TwitterScraperApp:
             anchor='w', padx=10, pady=(0, 10))
     
     def setup_help_tab(self):
-        """Set up the help tab"""
         help_frame = ttk.Frame(self.help_tab)
         help_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        # Create a notebook for help sections
         help_notebook = ttk.Notebook(help_frame)
         help_notebook.pack(fill='both', expand=True)
         
-        # Getting Started Tab
         getting_started = ttk.Frame(help_notebook)
         help_notebook.add(getting_started, text='Getting Started')
         
@@ -750,7 +617,6 @@ class TwitterScraperApp:
 """)
         getting_started_text.config(state='disabled')
         
-        # Keywords Help Tab
         keywords_help = ttk.Frame(help_notebook)
         help_notebook.add(keywords_help, text='Keywords')
         
@@ -777,7 +643,6 @@ class TwitterScraperApp:
 """)
         keywords_help_text.config(state='disabled')
         
-        # Troubleshooting Tab
         troubleshooting = ttk.Frame(help_notebook)
         help_notebook.add(troubleshooting, text='Troubleshooting')
         
@@ -810,7 +675,6 @@ class TwitterScraperApp:
 """)
         troubleshooting_text.config(state='disabled')
         
-        # About Tab
         about = ttk.Frame(help_notebook)
         help_notebook.add(about, text='About')
         
@@ -837,7 +701,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
         about_text.config(state='disabled')
     
     def unbind_all_mousewheel(self):
-        """Unbind all mousewheel events to prevent conflicts"""
         if sys.platform.startswith('win'):
             self.root.unbind_all("<MouseWheel>")
         elif sys.platform.startswith('darwin'):
@@ -849,36 +712,27 @@ This tool uses tweet-harvest for the actual scraping functionality.
             self.root.unbind_all("<Button-5>")
             
     def get_days_in_month(self, year, month):
-        """Get the number of days in a month, accounting for leap years"""
         return calendar.monthrange(int(year), int(month))[1]
     
     def update_day_options(self, year_var, month_var, day_var, day_combobox):
-        """Update the available days in a day combobox based on month and year"""
         try:
             year = int(year_var.get())
             month = int(month_var.get())
             
-            # Get current day selection
             current_day = day_var.get()
             
-            # Get maximum days for the month/year
             max_days = self.get_days_in_month(year, month)
             
-            # Create list of available days
             days = [f"{d:02d}" for d in range(1, max_days + 1)]
             
-            # Update combobox values
             day_combobox['values'] = days
             
-            # Check if current day selection is valid
             if int(current_day) > max_days:
                 day_var.set(f"{max_days:02d}")
         except ValueError:
-            # Handle case where the inputs aren't valid numbers
             pass
     
     def change_month_year(self, year_label, month_label, delta):
-        """Change month with wrapping to previous/next year"""
         current_year = int(year_label.cget("text"))
         month_names = list(calendar.month_name)
         current_month_idx = month_names.index(month_label.cget("text"))
@@ -899,45 +753,36 @@ This tool uses tweet-harvest for the actual scraping functionality.
         return new_year, new_month_idx
     
     def change_year(self, year_label, delta):
-        """Change year by delta amount"""
         current_year = int(year_label.cget("text"))
         new_year = current_year + delta
         year_label.config(text=str(new_year))
         return new_year
     
     def show_calendar(self, year_var, month_var, day_var):
-        """Show a calendar popup for date selection"""
-        # Create toplevel window
         cal_win = tk.Toplevel(self.root)
         cal_win.title("Select Date")
         cal_win.transient(self.root)
         cal_win.grab_set()
         
-        # Get current selections
         try:
             year = int(year_var.get())
             month = int(month_var.get())
             day = int(day_var.get())
         except ValueError:
-            # Default to today if there's an error
             today = datetime.now()
             year = today.year
             month = today.month
             day = today.day
         
-        # Calendar frame
         cal_frame = ttk.Frame(cal_win, padding=10)
         cal_frame.pack(fill='both', expand=True)
         
-        # Year and month selection
         header_frame = ttk.Frame(cal_frame)
         header_frame.pack(fill='x', pady=(0, 10))
         
-        # Store the current month and year for the calendar
         cal_year = year
         cal_month = month
         
-        # Previous/Next Month buttons
         prev_month = ttk.Button(header_frame, text="<", width=2)
         prev_month.pack(side='left')
         
@@ -947,7 +792,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
         next_month = ttk.Button(header_frame, text=">", width=2)
         next_month.pack(side='left')
         
-        # Year display and navigation
         prev_year = ttk.Button(header_frame, text="<<", width=2)
         prev_year.pack(side='left', padx=(20, 0))
         
@@ -957,15 +801,12 @@ This tool uses tweet-harvest for the actual scraping functionality.
         next_year = ttk.Button(header_frame, text=">>", width=2)
         next_year.pack(side='left')
         
-        # Create calendar grid
         days_frame = ttk.Frame(cal_frame)
         days_frame.pack(fill='both')
         
-        # Days of week header
         for i, day_name in enumerate(calendar.day_abbr):
             ttk.Label(days_frame, text=day_name, width=4, anchor='center').grid(row=0, column=i, padx=2, pady=2)
         
-        # Create day buttons
         day_buttons = []
         
         def create_calendar(year, month):
@@ -973,34 +814,28 @@ This tool uses tweet-harvest for the actual scraping functionality.
             cal_year = year
             cal_month = month
             
-            # Clear existing buttons
             for btn in day_buttons:
                 btn.grid_forget()
             day_buttons.clear()
             
-            # Get calendar for month/year
             cal = calendar.monthcalendar(year, month)
             
-            # Create day buttons
             for week_num, week in enumerate(cal, 1):
                 for day_idx, day_num in enumerate(week):
                     if day_num != 0:
                         btn = ttk.Button(days_frame, text=str(day_num), width=4,
                                        command=lambda d=day_num: select_date(year, month, d))
                         btn.grid(row=week_num, column=day_idx, padx=2, pady=2)
-                        # Highlight current selection
                         if day_num == day and month == int(month_var.get()) and year == int(year_var.get()):
                             btn.configure(style='Selected.TButton')
                         day_buttons.append(btn)
         
-        # Handle date selection
         def select_date(year, month, day):
             year_var.set(str(year))
             month_var.set(f"{month:02d}")
             day_var.set(f"{day:02d}")
             cal_win.destroy()
         
-        # Configure button commands with fixed local functions
         def prev_month_clicked():
             nonlocal cal_year, cal_month
             if cal_month == 1:
@@ -1035,21 +870,17 @@ This tool uses tweet-harvest for the actual scraping functionality.
             year_label.config(text=str(cal_year))
             create_calendar(cal_year, cal_month)
         
-        # Set button commands
         prev_month.config(command=prev_month_clicked)
         next_month.config(command=next_month_clicked)
         prev_year.config(command=prev_year_clicked)
         next_year.config(command=next_year_clicked)
         
-        # Create initial calendar
         create_calendar(year, month)
         
-        # Today button
         today = datetime.now()
         ttk.Button(cal_frame, text="Today",
                  command=lambda: select_date(today.year, today.month, today.day)).pack(pady=10)
         
-        # Center the window
         cal_win.update_idletasks()
         width = cal_win.winfo_width()
         height = cal_win.winfo_height()
@@ -1058,18 +889,14 @@ This tool uses tweet-harvest for the actual scraping functionality.
         cal_win.geometry('{}x{}+{}+{}'.format(width, height, x, y))
     
     def log(self, message):
-        """Add a message to the log"""
         self.log_text.config(state='normal')
         timestamp = datetime.now().strftime('%H:%M:%S')
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
         self.log_text.config(state='disabled')
-        
-        # Also log to actual logger
         logger.info(message)
     
     def check_node_install(self):
-        """Check if Node.js is installed"""
         self.log("Checking Node.js installation...")
         self.node_status_var.set("Checking Node.js installation...")
         
@@ -1090,7 +917,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
         threading.Thread(target=check_thread).start()
     
     def check_auth_token(self):
-        """Check if auth token is set"""
         if not self.auth_token_var.get() or self.auth_token_var.get() == 'your_auth_token_here':
             messagebox.showwarning(
                 "Auth Token Required",
@@ -1099,14 +925,12 @@ This tool uses tweet-harvest for the actual scraping functionality.
             self.notebook.select(self.settings_tab)
     
     def toggle_token_visibility(self):
-        """Toggle auth token visibility"""
         if self.show_token_var.get():
             self.auth_token_entry.config(show="")
         else:
             self.auth_token_entry.config(show="*")
     
     def save_auth_token(self):
-        """Save auth token to config"""
         token = self.auth_token_var.get().strip()
         if not token:
             messagebox.showerror("Error", "Auth token cannot be empty")
@@ -1118,19 +942,13 @@ This tool uses tweet-harvest for the actual scraping functionality.
         self.log("Auth token updated")
     
     def save_output_dir(self):
-        """Save output directory to config"""
         output_dir = self.output_dir_var.get().strip()
         if not output_dir:
             messagebox.showerror("Error", "Output directory cannot be empty")
             return
         
-        # Create directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
-        
-        # Update scraper output dir
         self.scraper.output_dir = output_dir
-        
-        # Update in .env file
         try:
             from pathlib import Path
             env_file = Path(__file__).parent / '.env'
@@ -1160,7 +978,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
         self.log(f"Output directory updated to: {output_dir}")
     
     def browse_output_dir(self):
-        """Browse for output directory"""
         current_dir = self.output_dir_var.get()
         new_dir = filedialog.askdirectory(initialdir=current_dir)
         if new_dir:
@@ -1168,9 +985,7 @@ This tool uses tweet-harvest for the actual scraping functionality.
             self.scraper.output_dir = new_dir
     
     def preview_date_ranges(self):
-        """Preview date ranges based on current settings"""
         try:
-            # Get full date components
             start_year = int(self.start_year_var.get())
             start_month = int(self.start_month_var.get())
             start_day = int(self.start_day_var.get())
@@ -1179,11 +994,9 @@ This tool uses tweet-harvest for the actual scraping functionality.
             end_month = int(self.end_month_var.get())
             end_day = int(self.end_day_var.get())
             
-            # Create date strings
             start_date = f"{start_year}-{start_month:02d}-{start_day:02d}"
             end_date = f"{end_year}-{end_month:02d}-{end_day:02d}"
             
-            # Validate dates
             try:
                 datetime.strptime(start_date, '%Y-%m-%d')
                 datetime.strptime(end_date, '%Y-%m-%d')
@@ -1191,47 +1004,37 @@ This tool uses tweet-harvest for the actual scraping functionality.
                 messagebox.showerror("Error", "Invalid date. Please check year, month, and day values.")
                 return
             
-            # Check if start date is before end date
             if datetime.strptime(start_date, '%Y-%m-%d') > datetime.strptime(end_date, '%Y-%m-%d'):
                 messagebox.showerror("Error", "Start date must be before or equal to end date")
                 return
             
             interval = self.interval_var.get()
-            
-            # Generate date ranges
             date_ranges = self.scraper.generate_date_ranges(start_date, end_date, interval)
             
-            # Display results
             if not date_ranges:
                 messagebox.showerror("Error", "Could not generate date ranges")
                 return
             
-            # Create a temporary window to show date ranges
             preview_window = tk.Toplevel(self.root)
             preview_window.title("Date Ranges Preview")
             preview_window.geometry("500x400")
             preview_window.transient(self.root)
             preview_window.grab_set()
-            
-            # Create scrollable frame
             scrollable = ScrollableFrame(preview_window)
             scrollable.pack(fill='both', expand=True, padx=10, pady=10)
             
-            # Add header
             ttk.Label(
                 scrollable.scrollable_frame, 
                 text=f"Date Ranges ({len(date_ranges)} total):",
                 font=('Segoe UI', 10, 'bold')
             ).pack(anchor='w', pady=(0, 10))
             
-            # Add date ranges
             for i, (start, end) in enumerate(date_ranges, 1):
                 ttk.Label(
                     scrollable.scrollable_frame,
                     text=f"{i}. {start} to {end}"
                 ).pack(anchor='w', pady=2)
             
-            # Add close button
             ttk.Button(
                 preview_window, 
                 text="Close", 
@@ -1242,7 +1045,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
             messagebox.showerror("Error", f"Invalid date format: {str(e)}")
     
     def add_keyword_examples(self):
-        """Add keyword examples to the keywords text area"""
         examples = [
             "gibran",
             "\"Gibran Rakabuming Raka\"",
@@ -1252,39 +1054,32 @@ This tool uses tweet-harvest for the actual scraping functionality.
             "\"Menteri Pendidikan\""
         ]
         
-        # Show a dialog with examples
         example_window = tk.Toplevel(self.root)
         example_window.title("Keyword Examples")
         example_window.geometry("500x400")
         example_window.transient(self.root)
         example_window.grab_set()
         
-        # Create frame for examples
         frame = ttk.Frame(example_window, padding=10)
         frame.pack(fill='both', expand=True)
         
-        # Add header
         ttk.Label(
             frame, 
             text="Keyword Examples:",
             font=('Segoe UI', 12, 'bold')
         ).pack(anchor='w', pady=(0, 10))
         
-        # Add explanation
         ttk.Label(
             frame,
             text="Click on examples to add them to your keywords:",
             font=('Segoe UI', 10)
         ).pack(anchor='w', pady=(0, 10))
-        
-        # Group examples by type
         ttk.Label(
             frame,
             text="Without quotes (flexible search):",
             font=('Segoe UI', 10, 'bold')
         ).pack(anchor='w', pady=(10, 5))
         
-        # Add simple examples
         simple_frame = ttk.Frame(frame)
         simple_frame.pack(fill='x', pady=5)
         
@@ -1296,7 +1091,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
             )
             btn.pack(side='left', padx=5, pady=5)
         
-        # Add exact phrase examples
         ttk.Label(
             frame,
             text="With quotes (exact phrase):",
@@ -1314,7 +1108,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
             )
             btn.pack(side='left', padx=5, pady=5)
         
-        # Add explanation
         explanation = ttk.LabelFrame(frame, text="How Keywords Work")
         explanation.pack(fill='x', pady=10)
         
@@ -1334,7 +1127,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
         )
         explanation_text.config(state='disabled')
         
-        # Add close button
         ttk.Button(
             example_window, 
             text="Close", 
@@ -1342,21 +1134,15 @@ This tool uses tweet-harvest for the actual scraping functionality.
         ).pack(pady=10)
     
     def add_keyword_to_text(self, keyword):
-        """Add a keyword to the text area"""
         current_text = self.keywords_text.get('1.0', tk.END).strip()
         if current_text:
             self.keywords_text.insert(tk.END, f"\n{keyword}")
         else:
             self.keywords_text.insert(tk.END, keyword)
         
-        # Show confirmation
         self.log(f"Added keyword: {keyword}")
     
     def parse_keywords_with_quotes(self, keywords_text):
-        """
-        Parse keywords text, preserving quotes if present
-        Returns list of keywords and list of booleans indicating whether to use quotes
-        """
         lines = keywords_text.strip().split('\n')
         keywords = []
         use_quotes = []
@@ -1366,22 +1152,17 @@ This tool uses tweet-harvest for the actual scraping functionality.
             if not line:
                 continue
                 
-            # Check if keyword is explicitly quoted
             quoted_match = re.match(r'^"(.+)"$', line)
             if quoted_match:
-                # Extract keyword from quotes and mark as quoted
                 keywords.append(quoted_match.group(1))
                 use_quotes.append(True)
             else:
-                # Unquoted keyword
                 keywords.append(line)
                 use_quotes.append(False)
         
         return keywords, use_quotes
     
     def start_scraping(self):
-        """Start scraping tweets"""
-        # Check auth token
         if not self.auth_token_var.get() or self.auth_token_var.get() == 'your_auth_token_here':
             messagebox.showwarning(
                 "Auth Token Required",
@@ -1390,9 +1171,7 @@ This tool uses tweet-harvest for the actual scraping functionality.
             self.notebook.select(self.settings_tab)
             return
         
-        # Get inputs
         try:
-            # Get full date components
             start_year = int(self.start_year_var.get())
             start_month = int(self.start_month_var.get())
             start_day = int(self.start_day_var.get())
@@ -1401,7 +1180,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
             end_month = int(self.end_month_var.get())
             end_day = int(self.end_day_var.get())
             
-            # Validate day values based on month/year
             start_max_days = self.get_days_in_month(start_year, start_month)
             end_max_days = self.get_days_in_month(end_year, end_month)
             
@@ -1419,34 +1197,26 @@ This tool uses tweet-harvest for the actual scraping functionality.
                 )
                 return
             
-            # Create date strings
             start_date = f"{start_year}-{start_month:02d}-{start_day:02d}"
             end_date = f"{end_year}-{end_month:02d}-{end_day:02d}"
             
-            # Validate dates
             try:
                 start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
                 end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
-                
-                # Store for future use
                 self.start_date = start_date_obj
                 self.end_date = end_date_obj
             except ValueError:
                 messagebox.showerror("Error", "Invalid date. Please check year, month, and day values.")
                 return
                 
-            # Check if start date is before end date
             if start_date_obj > end_date_obj:
                 messagebox.showerror("Error", "Start date must be before end date")
                 return
             
-            # Get other settings
             interval = self.interval_var.get()
             limit = int(self.limit_var.get())
             lang = self.lang_var.get()
             tab = self.tab_var.get()
-            
-            # Get keywords
             keywords_text = self.keywords_text.get('1.0', tk.END)
             keywords, use_quotes = self.parse_keywords_with_quotes(keywords_text)
             
@@ -1454,26 +1224,20 @@ This tool uses tweet-harvest for the actual scraping functionality.
                 messagebox.showerror("Error", "Please enter at least one keyword")
                 return
             
-            # Update output directory
             output_dir = self.output_dir_var.get()
             self.scraper.output_dir = output_dir
-            
-            # Update UI state
             self.stop_requested = False
             self.stop_button.config(state='normal')
             self.status_var.set("Scraping in progress...")
             self.progress_var.set(0)
             
-            # Log configuration
             self.log(f"Starting batch scrape with {len(keywords)} keywords")
             self.log(f"Date range: {start_date} to {end_date}, split by {interval}")
             self.log(f"Output directory: {output_dir}")
             
-            # Show keywords and quote settings
             for i, kw in enumerate(keywords):
                 self.log(f"Keyword {i+1}: {kw} ({'with' if use_quotes[i] else 'without'} quotes)")
             
-            # Start scraping in a separate thread
             import threading
             import time
             threading.Thread(
@@ -1485,11 +1249,9 @@ This tool uses tweet-harvest for the actual scraping functionality.
             messagebox.showerror("Error", f"Invalid input: {str(e)}")
     
     def run_scraping_job(self, keywords, use_quotes, start_date, end_date, interval, limit, lang, tab):
-        """Run the actual scraping job in a background thread"""
         import time
         
         try:
-            # Run batch scrape
             self.current_batch = self.scraper.batch_scrape(
                 keywords=keywords,
                 start_date=start_date,
@@ -1501,7 +1263,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
                 tab=tab
             )
             
-            # Update progress as we go
             total_jobs = self.current_batch['total_jobs']
             
             while self.current_batch['completed_jobs'] < total_jobs and not self.stop_requested:
@@ -1510,7 +1271,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
                 self.status_var.set(f"Scraping: {self.current_batch['completed_jobs']}/{total_jobs} jobs")
                 time.sleep(0.5)
             
-            # Final update
             if self.stop_requested:
                 self.log("Scraping stopped by user")
                 self.status_var.set("Scraping stopped")
@@ -1519,17 +1279,14 @@ This tool uses tweet-harvest for the actual scraping functionality.
                 self.status_var.set(f"Completed: {self.current_batch['successful_jobs']}/{total_jobs} successful")
                 self.log(f"Scraping completed. {self.current_batch['successful_jobs']}/{total_jobs} jobs successful")
             
-            # Update results tab
             self.refresh_results()
             
-            # Show completion message
             if not self.stop_requested:
                 messagebox.showinfo(
                     "Scraping Complete",
                     f"Completed {self.current_batch['successful_jobs']}/{total_jobs} jobs successfully.\n\n" +
                     f"Files saved to: {self.scraper.output_dir}"
                 )
-                # Switch to results tab
                 self.notebook.select(self.results_tab)
             
         except Exception as e:
@@ -1537,27 +1294,22 @@ This tool uses tweet-harvest for the actual scraping functionality.
             messagebox.showerror("Error", f"An error occurred during scraping: {str(e)}")
         
         finally:
-            # Reset UI state
             self.stop_button.config(state='disabled')
     
     def stop_scraping(self):
-        """Stop the scraping process"""
         if messagebox.askyesno("Stop Scraping", "Are you sure you want to stop the scraping process?"):
             self.stop_requested = True
             self.log("Requesting to stop scraping...")
             self.status_var.set("Stopping...")
     
     def clear_form(self):
-        """Clear the form inputs with visual feedback"""
         if messagebox.askyesno("Clear Form", "Are you sure you want to clear all inputs?"):
-            # Flash the form briefly to provide visual feedback
             original_bg = self.main_tab.cget("background")
             self.main_tab.configure(background="#f0f0f0")
             self.root.update_idletasks()
             self.root.after(100)
             self.main_tab.configure(background=original_bg)
             
-            # Reset date range
             current_year = datetime.now().year
             current_month = datetime.now().month
             current_day = datetime.now().day
@@ -1570,54 +1322,41 @@ This tool uses tweet-harvest for the actual scraping functionality.
             self.end_month_var.set(f"{current_month:02d}")
             self.end_day_var.set(f"{current_day:02d}")
             
-            # Update datetime objects
             self.start_date = datetime(current_year-1, 1, 1)
             self.end_date = datetime(current_year, current_month, current_day)
             
-            # Reset interval
             self.interval_var.set("monthly")
-            
-            # Clear keywords
+        
             self.keywords_text.delete('1.0', tk.END)
-            
-            # Reset options
             self.limit_var.set(str(config['default_limit']))
             self.lang_var.set(config['default_lang'])
             self.tab_var.set(config['default_tab'])
             
-            # Clear log
             self.log_text.config(state='normal')
             self.log_text.delete('1.0', tk.END)
             self.log_text.config(state='disabled')
             
-            # Add default keywords after clearing
             default_keywords = "#pilpres2024\ngibran\n\"Universitas Indonesia\""
             self.keywords_text.insert('1.0', default_keywords)
             
-            # Show confirmation message in both log and status bar
             self.log("Form cleared - all inputs have been reset to defaults")
             self.status_var.set("Form cleared successfully")
             
-            # Flash the status bar to provide visual feedback
             self.progress_var.set(100)
             self.root.update_idletasks()
             self.root.after(500)
             self.progress_var.set(0)
     
     def refresh_results(self):
-        """Refresh the results tab"""
         # Clear existing tree items
         for item in self.files_tree.get_children():
             self.files_tree.delete(item)
-        
-        # Update summary text
         self.summary_text.config(state='normal')
         self.summary_text.delete('1.0', tk.END)
         
         output_dir = Path(self.scraper.output_dir)
         
         if self.current_batch:
-            # Add batch summary
             self.summary_text.insert(tk.END, "BATCH SCRAPING SUMMARY\n\n")
             
             self.summary_text.insert(tk.END, f"Total Jobs: {self.current_batch['total_jobs']}\n")
@@ -1631,7 +1370,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
                 end_time = self.current_batch['end_time'].strftime('%Y-%m-%d %H:%M:%S')
                 duration_sec = self.current_batch['total_duration']
                 
-                # Format duration
                 if duration_sec < 60:
                     duration = f"{duration_sec:.1f} seconds"
                 elif duration_sec < 3600:
@@ -1645,23 +1383,18 @@ This tool uses tweet-harvest for the actual scraping functionality.
         else:
             self.summary_text.insert(tk.END, "No batch scraping results available.\n\n")
         
-        # Scan output directory for CSV files
         self.summary_text.insert(tk.END, "\nOUTPUT DIRECTORY SUMMARY\n\n")
         
         if output_dir.exists():
-            # Count CSV files in output directory
             csv_files = list(output_dir.glob("*.csv"))
             
-            # For legacy compatibility, check and move any files from the old nested directory
             tweets_data_dir = output_dir / 'tweets-data'
             if tweets_data_dir.exists():
                 nested_csv_files = list(tweets_data_dir.glob("*.csv"))
-                # Only display a note if nested files exist
                 if nested_csv_files:
                     self.summary_text.insert(tk.END, "Note: Found legacy CSV files in nested tweets-data folder.\n")
                     self.summary_text.insert(tk.END, "Moving them to the main directory...\n")
                     
-                    # Try to move the files from nested directory to main directory
                     moved_count = 0
                     import shutil
                     for nested_file in nested_csv_files:
@@ -1670,7 +1403,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
                             if not target_file.exists():
                                 shutil.copy2(nested_file, target_file)
                                 try:
-                                    # Delete the source file after successful copy
                                     os.remove(nested_file)
                                     moved_count += 1
                                 except Exception:
@@ -1683,10 +1415,8 @@ This tool uses tweet-harvest for the actual scraping functionality.
                     if moved_count > 0:
                         self.summary_text.insert(tk.END, f"Successfully moved {moved_count} files to main directory\n\n")
                     
-                    # Recount the files after moving
                     csv_files = list(output_dir.glob("*.csv"))
                     
-                    # Try to remove the tweets-data directory if it's empty
                     try:
                         remaining_files = list(tweets_data_dir.glob("*"))
                         if not remaining_files:
@@ -1699,7 +1429,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
             self.summary_text.insert(tk.END, f"Output Directory: {output_dir}\n")
             self.summary_text.insert(tk.END, f"Total CSV Files: {len(csv_files)}\n")
             
-            # Calculate total size
             total_size = sum(f.stat().st_size for f in csv_files)
             
             if total_size < 1024:
@@ -1711,33 +1440,27 @@ This tool uses tweet-harvest for the actual scraping functionality.
             
             self.summary_text.insert(tk.END, f"Total Size: {size_str}\n")
             
-            # Populate tree with file data
             for csv_file in csv_files:
                 filename = csv_file.name
                 
                 try:
-                    # Try to parse filename for metadata
                     parts = filename.replace('.csv', '').split('_')
                     
-                    # Find the date components
                     date_indices = []
                     for i, part in enumerate(parts):
                         if re.match(r'^(\d{4})$', part):  # Year
                             date_indices.append(i)
                     
                     if len(date_indices) >= 2:
-                        # Extract keyword and date range
                         keyword = ' '.join(parts[:date_indices[0]])
                         date_str = ' to '.join([
                             '-'.join(parts[date_indices[0]:date_indices[0]+3]),
                             '-'.join(parts[date_indices[1]:date_indices[1]+3])
                         ])
                     else:
-                        # Default if can't parse
                         keyword = ' '.join(parts[:-3] if len(parts) > 3 else parts)
                         date_str = '-'.join(parts[-3:]) if len(parts) > 3 else "Unknown"
                     
-                    # Get file size
                     size = csv_file.stat().st_size
                     if size < 1024:
                         size_str = f"{size} B"
@@ -1746,21 +1469,18 @@ This tool uses tweet-harvest for the actual scraping functionality.
                     else:
                         size_str = f"{size/(1024*1024):.1f} MB"
                     
-                    # Count tweets
                     try:
                         df = pd.read_csv(csv_file)
                         tweet_count = len(df)
                     except:
                         tweet_count = "N/A"
                     
-                    # Add to tree
                     self.files_tree.insert(
                         '', 'end', values=(filename, date_str, keyword, size_str, tweet_count),
                         tags=(str(csv_file),)
                     )
                     
                 except Exception as e:
-                    # Simplified entry if parsing fails
                     self.files_tree.insert(
                         '', 'end', values=(filename, "Unknown", "Unknown", "Unknown", "Unknown"),
                         tags=(str(csv_file),)
@@ -1771,14 +1491,12 @@ This tool uses tweet-harvest for the actual scraping functionality.
         self.summary_text.config(state='disabled')
     
     def show_files_tree_menu(self, event):
-        """Show right-click menu for files tree"""
         iid = self.files_tree.identify_row(event.y)
         if iid:
             self.files_tree.selection_set(iid)
             self.files_tree_menu.post(event.x_root, event.y_root)
     
     def open_selected_file(self):
-        """Open the selected file"""
         selection = self.files_tree.selection()
         if not selection:
             return
@@ -1787,7 +1505,7 @@ This tool uses tweet-harvest for the actual scraping functionality.
         file_path = self.files_tree.item(item, "tags")[0]
         
         try:
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':  
                 os.startfile(file_path)
             else:
                 import subprocess
@@ -1806,7 +1524,7 @@ This tool uses tweet-harvest for the actual scraping functionality.
         folder_path = os.path.dirname(file_path)
         
         try:
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':  
                 os.startfile(folder_path)
             else:
                 import subprocess
@@ -1815,14 +1533,13 @@ This tool uses tweet-harvest for the actual scraping functionality.
             messagebox.showerror("Error", f"Could not open folder: {str(e)}")
     
     def open_output_folder(self):
-        """Open the output folder"""
         output_dir = self.output_dir_var.get()
         if not os.path.exists(output_dir):
             messagebox.showerror("Error", f"Output directory {output_dir} does not exist")
             return
         
         try:
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':  
                 os.startfile(output_dir)
             else:
                 import subprocess
@@ -1831,12 +1548,10 @@ This tool uses tweet-harvest for the actual scraping functionality.
             messagebox.showerror("Error", f"Could not open folder: {str(e)}")
     
     def export_results_summary(self):
-        """Export the results summary to a file"""
         if not self.current_batch:
             messagebox.showwarning("Warning", "No batch results available to export")
             return
         
-        # Ask for file location
         file_path = filedialog.asksaveasfilename(
             defaultextension=".json",
             filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
@@ -1848,14 +1563,12 @@ This tool uses tweet-harvest for the actual scraping functionality.
             return
         
         try:
-            # Prepare data for serialization (convert datetime objects to strings)
             export_data = self.current_batch.copy()
             export_data['start_time'] = self.current_batch['start_time'].strftime('%Y-%m-%d %H:%M:%S')
             
             if self.current_batch['end_time']:
                 export_data['end_time'] = self.current_batch['end_time'].strftime('%Y-%m-%d %H:%M:%S')
             
-            # Write to file
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, indent=2)
             
@@ -1865,7 +1578,6 @@ This tool uses tweet-harvest for the actual scraping functionality.
             messagebox.showerror("Error", f"Could not export results: {str(e)}")
 
 def main():
-    """Main function to run the application"""
     root = tk.Tk()
     app = TwitterScraperApp(root)
     root.mainloop()
