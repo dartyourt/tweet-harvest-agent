@@ -889,6 +889,16 @@ This tool uses tweet-harvest for the actual scraping functionality.
         cal_win.geometry('{}x{}+{}+{}'.format(width, height, x, y))
     
     def log(self, message):
+        # Check if we're in the main thread
+        if threading.current_thread() == threading.main_thread():
+            # We're in the main thread, safe to update UI directly
+            self._update_log(message)
+        else:
+            # We're in a background thread, use after to schedule update on main thread
+            self.root.after(0, lambda: self._update_log(message))
+            
+    def _update_log(self, message):
+        """Helper method to update the log text widget (must be called from main thread)"""
         self.log_text.config(state='normal')
         timestamp = datetime.now().strftime('%H:%M:%S')
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
@@ -902,17 +912,22 @@ This tool uses tweet-harvest for the actual scraping functionality.
         
         def check_thread():
             result = self.scraper.check_node_installation()
-            if result['success']:
-                self.node_status_var.set(
-                    f"✅ Node.js {result['node']} and npx {result['npx']} found and working properly."
-                )
-                self.log(f"Node.js {result['node']} and npx {result['npx']} found.")
-            else:
-                self.node_status_var.set(
-                    f"❌ Node.js installation issue: {result['error']}\n" +
-                    "Please install Node.js from https://nodejs.org/"
-                )
-                self.log(f"Node.js issue: {result['error']}")
+            # Use root.after to update UI elements from the main thread
+            def update_ui():
+                if result['success']:
+                    self.node_status_var.set(
+                        f"✅ Node.js {result['node']} and npx {result['npx']} found and working properly."
+                    )
+                    self.log(f"Node.js {result['node']} and npx {result['npx']} found.")
+                else:
+                    self.node_status_var.set(
+                        f"❌ Node.js installation issue: {result['error']}\n" +
+                        "Please install Node.js from https://nodejs.org/"
+                    )
+                    self.log(f"Node.js issue: {result['error']}")
+            
+            # Schedule the UI update to run on the main thread
+            self.root.after(0, update_ui)
         
         threading.Thread(target=check_thread).start()
     
@@ -1252,6 +1267,39 @@ This tool uses tweet-harvest for the actual scraping functionality.
         import time
         
         try:
+            # Create a function to update the UI
+            def update_progress():
+                if self.current_batch['completed_jobs'] < total_jobs and not self.stop_requested:
+                    progress = (self.current_batch['completed_jobs'] / total_jobs) * 100
+                    # Update UI elements from the main thread
+                    self.progress_var.set(progress)
+                    self.status_var.set(f"Scraping: {self.current_batch['completed_jobs']}/{total_jobs} jobs")
+                    # Schedule the next update
+                    self.root.after(500, update_progress)
+                else:
+                    # Final update when complete
+                    if self.stop_requested:
+                        self.log("Scraping stopped by user")
+                        self.status_var.set("Scraping stopped")
+                    else:
+                        self.progress_var.set(100)
+                        self.status_var.set(f"Completed: {self.current_batch['successful_jobs']}/{total_jobs} successful")
+                        self.log(f"Scraping completed. {self.current_batch['successful_jobs']}/{total_jobs} jobs successful")
+                    
+                    # Schedule refresh_results and final message on main thread
+                    def finalize():
+                        self.refresh_results()
+                        if not self.stop_requested:
+                            messagebox.showinfo(
+                                "Scraping Complete",
+                                f"Completed {self.current_batch['successful_jobs']}/{total_jobs} jobs successfully.\n\n" +
+                                f"Files saved to: {self.scraper.output_dir}"
+                            )
+                            self.notebook.select(self.results_tab)
+                    
+                    self.root.after(0, finalize)
+
+            # Start the scraping operation
             self.current_batch = self.scraper.batch_scrape(
                 keywords=keywords,
                 start_date=start_date,
@@ -1265,33 +1313,46 @@ This tool uses tweet-harvest for the actual scraping functionality.
             
             total_jobs = self.current_batch['total_jobs']
             
-            while self.current_batch['completed_jobs'] < total_jobs and not self.stop_requested:
-                progress = (self.current_batch['completed_jobs'] / total_jobs) * 100
-                self.progress_var.set(progress)
-                self.status_var.set(f"Scraping: {self.current_batch['completed_jobs']}/{total_jobs} jobs")
-                time.sleep(0.5)
-            
-            if self.stop_requested:
-                self.log("Scraping stopped by user")
-                self.status_var.set("Scraping stopped")
-            else:
-                self.progress_var.set(100)
-                self.status_var.set(f"Completed: {self.current_batch['successful_jobs']}/{total_jobs} successful")
-                self.log(f"Scraping completed. {self.current_batch['successful_jobs']}/{total_jobs} jobs successful")
-            
-            self.refresh_results()
-            
-            if not self.stop_requested:
-                messagebox.showinfo(
-                    "Scraping Complete",
-                    f"Completed {self.current_batch['successful_jobs']}/{total_jobs} jobs successfully.\n\n" +
-                    f"Files saved to: {self.scraper.output_dir}"
-                )
-                self.notebook.select(self.results_tab)
+            # Start the update process on the main thread
+            self.root.after(0, update_progress)
+            def update_progress():
+                if self.current_batch['completed_jobs'] < total_jobs and not self.stop_requested:
+                    progress = (self.current_batch['completed_jobs'] / total_jobs) * 100
+                    # Update UI elements from the main thread
+                    self.progress_var.set(progress)
+                    self.status_var.set(f"Scraping: {self.current_batch['completed_jobs']}/{total_jobs} jobs")
+                    # Schedule the next update
+                    self.root.after(500, update_progress)
+                else:
+                    # Final update when complete
+                    if self.stop_requested:
+                        self.log("Scraping stopped by user")
+                        self.status_var.set("Scraping stopped")
+                    else:
+                        self.progress_var.set(100)
+                        self.status_var.set(f"Completed: {self.current_batch['successful_jobs']}/{total_jobs} successful")
+                        self.log(f"Scraping completed. {self.current_batch['successful_jobs']}/{total_jobs} jobs successful")
+                    
+                    # Schedule refresh_results and final message on main thread
+                    def finalize():
+                        self.refresh_results()
+                        if not self.stop_requested:
+                            messagebox.showinfo(
+                                "Scraping Complete",
+                                f"Completed {self.current_batch['successful_jobs']}/{total_jobs} jobs successfully.\n\n" +
+                                f"Files saved to: {self.scraper.output_dir}"
+                            )
+                            self.notebook.select(self.results_tab)
+                    
+                    self.root.after(0, finalize)
             
         except Exception as e:
-            self.log(f"Error: {str(e)}")
-            messagebox.showerror("Error", f"An error occurred during scraping: {str(e)}")
+            # Use the main thread to log and show errors
+            error_msg = str(e)
+            def show_error():
+                self.log(f"Error: {error_msg}")
+                messagebox.showerror("Error", f"An error occurred during scraping: {error_msg}")
+            self.root.after(0, show_error)
         
         finally:
             self.stop_button.config(state='disabled')
